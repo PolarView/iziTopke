@@ -3,20 +3,35 @@ require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
+let isLimit = false;
+
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const message = msg.text;
   console.log(message);
+
+  if (message === "/start") {
+    await bot.sendMessage(
+      chatId,
+      `*Привет, это бот с помощью которого ты сдашь топку(я надеюсь), просто спроси у меня, что тебя интересует. Вопросы пиши как можно подробнее, если ответ не устраивает переформулируй вопрос или уточни что именно нужно узнать. Удачи! \n P.S как сдашь экзамен пишите как все прошло сюда  https://t.me\/+fetuA_naWFBmZjky \n ❗️бот может оставаться бесплатным пока вы задаёте по 1 вопросу за каждые 3 секунды, не более ❗️*`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
 
   if (!message && message === "/start") {
     // Ignore non-text or empty messages
     return;
   }
   // Send the input message to ChatGPT API and get the response
-  const outputMessage = await getChatGPTResponse(message);
+  if (!isLimit) {
+    const outputMessage = await getChatGPTResponse(message);
 
-  // Send the output message back to the user
-  bot.sendMessage(chatId, outputMessage);
+    // Send the output message back to the user
+    await bot.sendMessage(chatId, outputMessage);
+  } else {
+    await bot.sendMessage(chatId, "слишком много вопросов возвращайтесь через 3 минуты");
+  }
 });
 
 async function getChatGPTResponse(message) {
@@ -46,8 +61,25 @@ async function getChatGPTResponse(message) {
 
     return chatGPTResponse;
   } catch (error) {
+    if (error instanceof OpenAIError) {
+      if (error.response && error.response.status === 402) {
+        console.log("ChatGPT API call failed due to model expiration.");
+        return "ChatGPT API call failed due to model expiration.";
+        // Handle the expired model error here
+      } else if (error.response && error.response.status === 429) {
+        console.log("ChatGPT API call failed due to rate limit exceeded.");
+        isLimit = true;
+        setTimeout(() => {
+          isLimit = false;
+        }, 180000);
+        return "слишком много вопросов возвращайтесь через 3 минуты";
+      } else {
+        console.log("ChatGPT API call failed with an error:", error.message);
+        return "Простите что-то пошло не так, пишите об ошибках сюда @iziTopkaSupport";
+      }
+    }
     console.error("Error:", error.response ? error.response.data : error.message);
-    return "Sorry, something went wrong.";
+    return "Простите что-то пошло не так, пишите об ошибках сюда @iziTopkaSupport";
   }
 }
 
